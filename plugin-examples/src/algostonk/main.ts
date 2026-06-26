@@ -144,6 +144,7 @@ btnMagnet.addEventListener('click', () => { engine.magnet = !engine.magnet; btnM
 // ---------- style popover ----------
 const COLORS = ['#2962ff', '#089981', '#f23645', '#ff9800', '#9c27b0', '#131722'];
 const styleEl = document.getElementById('style') as HTMLElement;
+document.body.appendChild(styleEl); // move out of #stage so the engine's capture-phase pointerdown can't intercept its clicks
 function buildStyle() {
   styleEl.innerHTML = '';
   COLORS.forEach(c => { const s = document.createElement('div'); s.className = 'sw'; s.style.background = c; s.title = c; s.dataset.c = c;
@@ -163,7 +164,8 @@ function renderStyle() {
   styleEl.querySelectorAll<HTMLElement>('.w').forEach(b => b.classList.toggle('sel', b.dataset.w === String(d.width)));
   // position near the drawing's first anchor (clamped into the stage)
   const a = d.anchors[0]; const x = chart.timeScale().logicalToCoordinate(a.logical as any); const y = candle.priceToCoordinate(a.price);
-  const sx = Math.max(8, Math.min((x ?? 80) + 12, stage.clientWidth - 230)); const sy = Math.max(8, (y ?? 40) - 44);
+  const r = stage.getBoundingClientRect(); // #style is on <body> now → position with viewport coords
+  const sx = Math.max(8, Math.min(r.left + (x ?? 80) + 12, r.right - 234)); const sy = Math.max(8, r.top + (y ?? 40) - 44);
   styleEl.style.left = sx + 'px'; styleEl.style.top = sy + 'px';
 }
 buildStyle();

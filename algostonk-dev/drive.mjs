@@ -67,6 +67,7 @@ try {
     else if (op === 'up') { useTouch ? await ts.touchEnd() : await page.mouse.up(); }
     else if (op === 'click') { await page.mouse.click(X(p1), Y(p2)); }
     else if (op === 'clickabs') { await page.mouse.click(p1, p2); }
+    else if (op === 'clicksel') { const b = await page.$eval(p1, (el) => { const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }); await page.mouse.click(b.x, b.y); }
     else if (op === 'dblclick') { await page.mouse.click(X(p1), Y(p2), { clickCount: 2 }); }
     else if (op === 'key') { await page.keyboard.press(p1); }
     else if (op === 'wheel') { await page.mouse.move(X(0.5), Y(0.5)); await page.mouse.wheel({ deltaY: p1 }); }
