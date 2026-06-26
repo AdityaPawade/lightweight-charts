@@ -291,8 +291,32 @@ export class DrawingEngine {
   private fmt(v: number) { return v.toFixed(2); }
 
   // ---------- persistence ----------
-  private save() { try { localStorage.setItem(this.storeKey, JSON.stringify(this.drawings)); } catch { /* ignore */ } this.onChange?.(); }
-  private load() { try { const s = localStorage.getItem(this.storeKey); if (s) { const a = JSON.parse(s); if (Array.isArray(a)) this.drawings = a.filter((d) => d && typeof d.type === 'string' && Array.isArray(d.anchors)); } } catch { /* ignore */ } }
+  // Persist with the dataset's first-bar DATE as the basis so anchors stay on their original bars no matter how many
+  // older bars are loaded later (lazy history) — logical indices alone would drift when bars are prepended.
+  private save() {
+    try {
+      const firstDate = this.bars[0] ? (this.bars[0].time as unknown as string) : null;
+      localStorage.setItem(this.storeKey, JSON.stringify({ v: 2, firstDate, drawings: this.drawings }));
+    } catch { /* ignore */ }
+    this.onChange?.();
+  }
+  private load() {
+    try {
+      const s = localStorage.getItem(this.storeKey); if (!s) return;
+      const parsed = JSON.parse(s);
+      let list: Drawing[]; let savedFirst: string | null = null;
+      if (Array.isArray(parsed)) { list = parsed; }                                   // legacy v1 (bare array)
+      else if (parsed && Array.isArray(parsed.drawings)) { list = parsed.drawings; savedFirst = parsed.firstDate ?? null; }
+      else return;
+      list = list.filter((d) => d && typeof d.type === 'string' && Array.isArray(d.anchors));
+      // Date-basis remap: shift logicals so each anchor stays on the same calendar bar in the current (deeper) dataset.
+      let shift = 0;
+      if (savedFirst != null) { const i = this.bars.findIndex((b) => (b.time as unknown as string) === savedFirst); if (i > 0) shift = i; }
+      else if (this.bars.length > 400) shift = this.bars.length - 400;                  // legacy v1 was anchored to the 400-bar window
+      if (shift) for (const d of list) for (const a of d.anchors) a.logical += shift;
+      this.drawings = list;
+    } catch { /* ignore */ }
+  }
 }
 
 function line2(ctx: CanvasRenderingContext2D, a: { x: number; y: number }, b: { x: number; y: number }) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
