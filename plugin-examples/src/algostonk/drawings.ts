@@ -85,6 +85,15 @@ export class DrawingEngine {
   setWidth(w: number) { this.width = w; const d = this.selected(); if (d) { d.width = w; this.save(); } }
   selected() { return this.drawings.find(d => d.id === this.selectedId) || null; }
   select(id: string | null) { this.selectedId = id; this.onChange?.(); }
+  // viewport (client) position of the selected drawing's first anchor — lets an external/portaled style popover
+  // (rendered outside #stage so the capture-phase pointerdown can't intercept its clicks) anchor to the drawing.
+  selectedAnchorClient(): { x: number; y: number } | null {
+    const d = this.selected(); if (!d || !d.anchors[0]) return null;
+    const x = this.x(d.anchors[0].logical), y = this.y(d.anchors[0].price);
+    if (x == null && y == null) return null;
+    const r = this.stage.getBoundingClientRect();
+    return { x: r.left + (x ?? 60), y: r.top + (y ?? 40) };
+  }
   clearAll() { this.drawings = []; this.cancelDraft(); this.select(null); this.save(); }
   deleteSelected() { if (this.selectedId) { this.drawings = this.drawings.filter(d => d.id !== this.selectedId); this.select(null); this.save(); } }
   private cancelDraft() { if (this.draft) { this.draft = null; this.lockChart(false); } }
@@ -94,8 +103,8 @@ export class DrawingEngine {
   private plotW() { return this.chart.timeScale().width(); }
   private plotH() { return this.stage.clientHeight - this.chart.timeScale().height(); }
   private resize() { const w = this.plotW(), h = this.plotH(), r = this.dpr(); this.canvas.style.width = w + 'px'; this.canvas.style.height = h + 'px'; this.canvas.width = Math.round(w * r); this.canvas.height = Math.round(h * r); this.ctx.setTransform(r, 0, 0, r, 0, 0); }
-  private x(l: number) { const c = this.chart.timeScale().logicalToCoordinate(l as Logical); return c == null ? null : c; }
-  private y(p: number) { const c = this.series.priceToCoordinate(p); return c == null ? null : c; }
+  private x(l: number): number | null { const c = this.chart.timeScale().logicalToCoordinate(l as Logical); return c == null ? null : (c as number); }
+  private y(p: number): number | null { const c = this.series.priceToCoordinate(p); return c == null ? null : (c as number); }
   private toLogical(px: number) { return (this.chart.timeScale().coordinateToLogical(px) as number) ?? 0; }
   private toPrice(py: number) { return (this.series.coordinateToPrice(py) as number) ?? 0; }
   private pt(a: Anchor): P | null { const x = this.x(a.logical), y = this.y(a.price); return x == null || y == null ? null : { x, y }; }
