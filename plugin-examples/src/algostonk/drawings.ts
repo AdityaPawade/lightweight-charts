@@ -27,7 +27,7 @@ const POINTS: Record<string, number> = {
   trend: 2, ray: 2, extended: 2, info: 2, trendangle: 2, arrow: 2, hline: 1, vline: 1, hray: 1, crossline: 1,
   channel: 3, regression: 2, disjoint: 4, pitchfork: 3,
   rect: 2, circle: 2, ellipse: 2, triangle: 3, arc: 3, polyline: 99,
-  fib: 2, fibext: 3, fibtime: 2, fibchannel: 3, gannfan: 2, gannbox: 2, measure: 2, longpos: 2, shortpos: 2, pricerange: 2,
+  fib: 2, fibext: 3, fibtime: 2, fibchannel: 3, gannfan: 2, gannbox: 2, measure: 2, longpos: 3, shortpos: 3, pricerange: 2,
   text: 1, callout: 1, note: 1, pricelabel: 1, arrowup: 1, arrowdown: 1,
   xabcd: 5, abcd: 4, hs: 6, tripattern: 4, threedrives: 7, ell5: 6, ellabc: 4, ellabcde: 6,
   cyclic: 2, sine: 2,
@@ -40,7 +40,7 @@ const LABELS: Partial<Record<ToolType, string[]>> = {
 };
 const HIT = 6, ANCHOR_R = 5, CLICK_SLOP = 5;
 let _id = 0;
-const uid = () => `d${++_id}_${Math.floor(performance.now())}`;
+const uid = () => (typeof crypto !== 'undefined' && (crypto as { randomUUID?: () => string }).randomUUID ? crypto.randomUUID() : `d${++_id}_${Math.floor(performance.now())}`);
 type P = { x: number; y: number };
 
 export class DrawingEngine {
@@ -57,19 +57,28 @@ export class DrawingEngine {
   private draft: Drawing | null = null;
   private down: P | null = null;
   private drag: { id: string; idx: number; orig: Anchor[]; from: Anchor } | null = null;
+  private ro?: ResizeObserver; private raf = 0; private destroyed = false;
 
   constructor(o: { canvas: HTMLCanvasElement; chart: IChartApi; series: ISeriesApi<'Candlestick'>; stage: HTMLElement; bars: Bar[]; storeKey: string; }) {
     this.canvas = o.canvas; this.ctx = o.canvas.getContext('2d')!; this.chart = o.chart; this.series = o.series; this.stage = o.stage; this.bars = o.bars; this.storeKey = o.storeKey;
     this.load(); this.resize();
-    new ResizeObserver(() => this.resize()).observe(this.stage);
+    this.ro = new ResizeObserver(() => this.resize()); this.ro.observe(this.stage);
     this.stage.addEventListener('pointerdown', this.onDown, true);
     window.addEventListener('pointermove', this.onMove, true);
     window.addEventListener('pointerup', this.onUp, true);
+    window.addEventListener('pointercancel', this.onCancel, true);
+    window.addEventListener('blur', this.onCancel);
     window.addEventListener('keydown', this.onKey);
     this.stage.addEventListener('contextmenu', this.onCtx);
     this.stage.addEventListener('dblclick', this.onDbl, true);
-    const loop = () => { this.render(); requestAnimationFrame(loop); }; requestAnimationFrame(loop);
+    const loop = () => { if (this.destroyed) return; this.render(); this.raf = requestAnimationFrame(loop); }; this.raf = requestAnimationFrame(loop);
   }
+
+  // Tear down all listeners / observers / the rAF loop — call when unmounting (prod SPA integration).
+  destroy() { this.destroyed = true; cancelAnimationFrame(this.raf); this.ro?.disconnect();
+    this.stage.removeEventListener('pointerdown', this.onDown, true); this.stage.removeEventListener('contextmenu', this.onCtx); this.stage.removeEventListener('dblclick', this.onDbl, true);
+    window.removeEventListener('pointermove', this.onMove, true); window.removeEventListener('pointerup', this.onUp, true); window.removeEventListener('pointercancel', this.onCancel, true); window.removeEventListener('blur', this.onCancel); window.removeEventListener('keydown', this.onKey); }
+  private onCancel = () => { this.drag = null; this.cancelDraft(); this.lockChart(false); };
 
   setTool(t: ToolType) { this.cancelDraft(); this.tool = t; if (t !== 'cursor') this.select(null); this.stage.style.cursor = t === 'cursor' ? 'default' : 'crosshair'; this.onChange?.(); }
   setColor(c: string) { this.color = c; const d = this.selected(); if (d) { d.color = c; this.save(); } }
@@ -91,7 +100,7 @@ export class DrawingEngine {
   private toPrice(py: number) { return (this.series.coordinateToPrice(py) as number) ?? 0; }
   private pt(a: Anchor): P | null { const x = this.x(a.logical), y = this.y(a.price); return x == null || y == null ? null : { x, y }; }
   private pointer(e: PointerEvent | MouseEvent) { const r = this.stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
-  private anchorAt(px: number, py: number, magnet = this.magnet): Anchor { let logical = this.toLogical(px), price = this.toPrice(py); if (magnet) { const b = this.bars[Math.round(logical)]; if (b) { const c = [b.open, b.high, b.low, b.close]; price = c.reduce((p, v) => Math.abs(v - price) < Math.abs(p - price) ? v : p, c[0]); } } return { logical, price }; }
+  private anchorAt(px: number, py: number, magnet = this.magnet): Anchor { let logical = this.toLogical(px), price = this.toPrice(py); if (magnet) { logical = Math.round(logical); const b = this.bars[logical]; if (b) { const c = [b.open, b.high, b.low, b.close]; price = c.reduce((p, v) => Math.abs(v - price) < Math.abs(p - price) ? v : p, c[0]); } } return { logical, price }; }
   private snap(px: number, py: number, prev: Anchor | undefined, ctrl: boolean): Anchor { const a = this.anchorAt(px, py, this.magnet && !ctrl); if (ctrl && prev) { const pv = this.pt(prev); if (pv) { if (Math.abs(px - pv.x) >= Math.abs(py - pv.y)) a.price = prev.price; else a.logical = prev.logical; } } return a; }
   private isDrag(t: ToolType) { return t === 'brush' || t === 'highlighter'; }
 
@@ -162,15 +171,18 @@ export class DrawingEngine {
   // ---------- render ----------
   private render() { const ctx = this.ctx, W = this.plotW(), H = this.plotH(); if (this.canvas.style.width !== W + 'px') this.resize(); ctx.clearRect(0, 0, W, H); const all = this.draft ? [...this.drawings, this.draft] : this.drawings; for (const d of all) this.drawOne(ctx, d, W, H, d.id === this.selectedId); }
   private drawOne(ctx: CanvasRenderingContext2D, d: Drawing, W: number, H: number, sel: boolean) {
-    const P = d.anchors.map(a => this.pt(a)); if (!P[0]) return;
     ctx.lineWidth = d.width; ctx.strokeStyle = d.color; ctx.fillStyle = d.color; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.font = '12px ui-monospace, Menlo, Consolas, monospace';
     const line = (a: P, b: P) => { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); };
-    const t = d.type;
-    if (t === 'hline' && P[0]) { line({ x: 0, y: P[0].y }, { x: W, y: P[0].y }); this.tag(ctx, W - 4, P[0].y, this.fmt(d.anchors[0].price), d.color); }
-    else if (t === 'pricelabel' && P[0]) { line({ x: 0, y: P[0].y }, { x: W, y: P[0].y }); this.tag(ctx, P[0].x, P[0].y, (d.text ? d.text + ' ' : '') + this.fmt(d.anchors[0].price), d.color, 'left'); }
-    else if (t === 'hray' && P[0]) { line(P[0], { x: W, y: P[0].y }); }
-    else if (t === 'vline' && P[0]) line({ x: P[0].x, y: 0 }, { x: P[0].x, y: H });
-    else if (t === 'crossline' && P[0]) { line({ x: 0, y: P[0].y }, { x: W, y: P[0].y }); line({ x: P[0].x, y: 0 }, { x: P[0].x, y: H }); }
+    const t = d.type; const a0 = d.anchors[0]; if (!a0) return; const x0 = this.x(a0.logical), y0 = this.y(a0.price);
+    // single-axis tools render even when the OTHER axis is off-screen (price-only or logical-only)
+    if (t === 'hline') { if (y0 == null) return; line({ x: 0, y: y0 }, { x: W, y: y0 }); this.tag(ctx, W - 4, y0, this.fmt(a0.price), d.color); return this.handles(ctx, d, sel); }
+    if (t === 'pricelabel') { if (y0 == null) return; line({ x: 0, y: y0 }, { x: W, y: y0 }); this.tag(ctx, x0 ?? 60, y0, (d.text ? d.text + ' ' : '') + this.fmt(a0.price), d.color, 'left'); return this.handles(ctx, d, sel); }
+    if (t === 'vline') { if (x0 == null) return; line({ x: x0, y: 0 }, { x: x0, y: H }); return this.handles(ctx, d, sel); }
+    if (t === 'crossline') { if (y0 != null) line({ x: 0, y: y0 }, { x: W, y: y0 }); if (x0 != null) line({ x: x0, y: 0 }, { x: x0, y: H }); return this.handles(ctx, d, sel); }
+    if (t === 'cyclic') { this.cyclic(ctx, d, H); return this.handles(ctx, d, sel); }
+    if (t === 'fibtime') { this.fibTime(ctx, d, H); return this.handles(ctx, d, sel); }
+    const P = d.anchors.map(a => this.pt(a)); if (!P[0]) return;
+    if (t === 'hray' && P[0]) { line(P[0], { x: W, y: P[0].y }); }
     else if ((t === 'trend') && P[0] && P[1]) line(P[0], P[1]);
     else if ((t === 'ray' || t === 'extended') && P[0] && P[1]) { const e = this.ext(P[0], P[1], t); line(e.a, e.b); }
     else if (t === 'arrow' && P[0] && P[1]) { line(P[0], P[1]); this.head(ctx, P[0], P[1]); }
@@ -192,20 +204,19 @@ export class DrawingEngine {
     else if (t === 'pitchfork') { if (P[0] && P[1] && P[2]) this.pitchfork(ctx, d, P[0], P[1], P[2]); else if (P[0] && P[1]) line(P[0], P[1]); }
     else if (t === 'fib' && P[0] && P[1]) this.fib(ctx, d, P[0], P[1]);
     else if (t === 'fibext' && P[0] && P[1] && P[2]) this.fibExt(ctx, d, P);
-    else if (t === 'fibtime' && P[0] && P[1]) this.fibTime(ctx, d, H);
     else if (t === 'fibchannel' && P[0] && P[1] && P[2]) this.fibChannel(ctx, d, P[0], P[1], P[2]);
     else if (t === 'gannfan' && P[0] && P[1]) this.gannFan(ctx, d, P[0], P[1]);
     else if (t === 'gannbox' && P[0] && P[1]) this.gannBox(ctx, d, P[0], P[1]);
     else if (t === 'measure' && P[0] && P[1]) this.measure(ctx, d, P[0], P[1]);
-    else if ((t === 'longpos' || t === 'shortpos') && P[0] && P[1]) this.position(ctx, d, P[0], P[1], t === 'longpos');
+    else if ((t === 'longpos' || t === 'shortpos') && P[0] && P[1]) this.position(ctx, d, t === 'longpos');
     else if (t === 'pricerange' && P[0] && P[1]) this.priceRange(ctx, d, P[0], P[1]);
-    else if (t === 'cyclic' && P[0] && P[1]) this.cyclic(ctx, d, P[0], P[1], H);
     else if (t === 'sine' && P[0] && P[1]) this.sine(ctx, d, P[0], P[1]);
     else if (LABELS[t]) this.labeledPath(ctx, d, P, LABELS[t]!, t === 'tripattern');
     else if (P[0] && P[1]) line(P[0], P[1]);
 
-    if (sel) for (const q of P) if (q) { ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.strokeStyle = d.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(q.x, q.y, ANCHOR_R, 0, 7); ctx.fill(); ctx.stroke(); }
+    this.handles(ctx, d, sel);
   }
+  private handles(ctx: CanvasRenderingContext2D, d: Drawing, sel: boolean) { if (!sel) return; for (const a of d.anchors) { const q = this.pt(a); if (!q) continue; ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.strokeStyle = d.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(q.x, q.y, ANCHOR_R, 0, 7); ctx.fill(); ctx.stroke(); } }
 
   // ---------- per-tool renderers ----------
   private head(ctx: CanvasRenderingContext2D, a: P, b: P) { const ang = Math.atan2(b.y - a.y, b.x - a.x), s = 10 + this.ctx.lineWidth * 2; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x - s * Math.cos(ang - 0.4), b.y - s * Math.sin(ang - 0.4)); ctx.lineTo(b.x - s * Math.cos(ang + 0.4), b.y - s * Math.sin(ang + 0.4)); ctx.closePath(); ctx.fill(); }
@@ -216,6 +227,7 @@ export class DrawingEngine {
     const lo = Math.max(0, Math.round(Math.min(d.anchors[0].logical, d.anchors[1].logical))), hi = Math.min(this.bars.length - 1, Math.round(Math.max(d.anchors[0].logical, d.anchors[1].logical))); if (hi - lo < 2) { ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke(); return; }
     let n = 0, sx = 0, sy = 0, sxx = 0, sxy = 0; for (let i = lo; i <= hi; i++) { const yv = this.bars[i].close; n++; sx += i; sy += yv; sxx += i * i; sxy += i * yv; }
     const b = (n * sxy - sx * sy) / (n * sxx - sx * sx || 1), a = (sy - b * sx) / n; let sse = 0; for (let i = lo; i <= hi; i++) sse += (this.bars[i].close - (a + b * i)) ** 2; const sd = Math.sqrt(sse / n) * 2;
+    if (this.x(lo) == null || this.x(hi) == null || this.y(a + b * lo) == null) return;
     const px = (i: number) => this.x(i)!, py = (v: number) => this.y(v)!; const mid: P[] = [{ x: px(lo), y: py(a + b * lo) }, { x: px(hi), y: py(a + b * hi) }];
     ctx.fillStyle = d.color; ctx.globalAlpha = 0.08; ctx.beginPath(); ctx.moveTo(px(lo), py(a + b * lo + sd)); ctx.lineTo(px(hi), py(a + b * hi + sd)); ctx.lineTo(px(hi), py(a + b * hi - sd)); ctx.lineTo(px(lo), py(a + b * lo - sd)); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
     ctx.strokeStyle = d.color; ctx.beginPath(); ctx.moveTo(mid[0].x, mid[0].y); ctx.lineTo(mid[1].x, mid[1].y); ctx.stroke(); ctx.globalAlpha = 0.6; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(px(lo), py(a + b * lo + sd)); ctx.lineTo(px(hi), py(a + b * hi + sd)); ctx.moveTo(px(lo), py(a + b * lo - sd)); ctx.lineTo(px(hi), py(a + b * hi - sd)); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
@@ -232,7 +244,7 @@ export class DrawingEngine {
       ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(R, y); ctx.stroke(); ctx.fillText(`${l.toFixed(3)}  ${this.fmt(price)}`, L + 4, y - 3); prev = y; });
   }
   private fibTime(ctx: CanvasRenderingContext2D, d: Drawing, H: number) {
-    const unit = Math.abs(d.anchors[1].logical - d.anchors[0].logical) || 1; const seq = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55];
+    if (!d.anchors[1]) return; const unit = Math.abs(d.anchors[1].logical - d.anchors[0].logical) || 1; const seq = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55];
     ctx.strokeStyle = d.color; ctx.fillStyle = d.color; ctx.lineWidth = 1; ctx.globalAlpha = 0.85; ctx.setLineDash([4, 4]);
     for (const n of seq) { const x = this.x(d.anchors[0].logical + n * unit); if (x == null || x > this.plotW()) break; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); ctx.fillText(String(n), x + 3, 13); }
     ctx.setLineDash([]); ctx.globalAlpha = 1;
@@ -255,9 +267,9 @@ export class DrawingEngine {
     ctx.globalAlpha = 1; ctx.lineWidth = d.width; ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
   }
   private measure(ctx: CanvasRenderingContext2D, d: Drawing, a: P, b: P) { const up = d.anchors[1].price >= d.anchors[0].price, col = up ? '#089981' : '#f23645'; ctx.fillStyle = col; ctx.strokeStyle = col; ctx.globalAlpha = 0.12; ctx.fillRect(a.x, a.y, b.x - a.x, b.y - a.y); ctx.globalAlpha = 1; ctx.lineWidth = 1; ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y); const dp = d.anchors[1].price - d.anchors[0].price, pct = dp / d.anchors[0].price * 100, bars = Math.round(d.anchors[1].logical - d.anchors[0].logical); this.pill(ctx, (a.x + b.x) / 2, b.y + (up ? 16 : -8), `${dp >= 0 ? '+' : ''}${this.fmt(dp)} (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)  ${Math.abs(bars)} bars`, col); }
-  private position(ctx: CanvasRenderingContext2D, d: Drawing, a: P, b: P, long: boolean) { const entry = d.anchors[0].price, target = d.anchors[1].price, risk = long ? entry - (target - entry) : entry + (entry - target); const ey = this.y(entry)!, ty = this.y(target)!, ry = this.y(risk)!, L = Math.min(a.x, b.x), R = Math.max(a.x, b.x); ctx.fillStyle = '#089981'; ctx.globalAlpha = 0.14; ctx.fillRect(L, Math.min(ey, ty), R - L, Math.abs(ty - ey)); ctx.fillStyle = '#f23645'; ctx.fillRect(L, Math.min(ey, ry), R - L, Math.abs(ry - ey)); ctx.globalAlpha = 1; ctx.strokeStyle = '#9598a1'; ctx.lineWidth = 1; ctx.strokeRect(L, Math.min(ty, ry), R - L, Math.abs(ry - ty)); ctx.strokeStyle = '#131722'; ctx.setLineDash([3, 3]); line2(ctx, { x: L, y: ey }, { x: R, y: ey }); ctx.setLineDash([]); const rr = Math.abs(target - entry) / (Math.abs(entry - risk) || 1); this.pill(ctx, (L + R) / 2, Math.min(ty, ry) - 8, `${long ? 'LONG' : 'SHORT'}  R:R ${rr.toFixed(2)}`, long ? '#089981' : '#f23645'); }
+  private position(ctx: CanvasRenderingContext2D, d: Drawing, long: boolean) { const A = d.anchors; const entry = A[0].price, target = A[1].price, stop = A[2] ? A[2].price : (long ? entry - (target - entry) : entry + (entry - target)); const ey = this.y(entry), ty = this.y(target), ry = this.y(stop); if (ey == null || ty == null || ry == null) return; const xs = A.map(a => this.x(a.logical)).filter((v): v is number => v != null); if (!xs.length) return; const L = Math.min(...xs), R = Math.max(...xs); ctx.fillStyle = '#089981'; ctx.globalAlpha = 0.14; ctx.fillRect(L, Math.min(ey, ty), R - L, Math.abs(ty - ey)); ctx.fillStyle = '#f23645'; ctx.fillRect(L, Math.min(ey, ry), R - L, Math.abs(ry - ey)); ctx.globalAlpha = 1; ctx.strokeStyle = '#9598a1'; ctx.lineWidth = 1; ctx.strokeRect(L, Math.min(ty, ry), R - L, Math.abs(ry - ty)); ctx.strokeStyle = '#131722'; ctx.setLineDash([3, 3]); line2(ctx, { x: L, y: ey }, { x: R, y: ey }); ctx.setLineDash([]); const rr = Math.abs(target - entry) / (Math.abs(entry - stop) || 1); this.pill(ctx, (L + R) / 2, Math.min(ty, ry) - 8, `${long ? 'LONG' : 'SHORT'}  R:R ${rr.toFixed(2)}`, long ? '#089981' : '#f23645'); }
   private priceRange(ctx: CanvasRenderingContext2D, d: Drawing, a: P, b: P) { ctx.fillStyle = d.color; ctx.globalAlpha = 0.10; ctx.fillRect(a.x, a.y, b.x - a.x, b.y - a.y); ctx.globalAlpha = 1; ctx.lineWidth = 1; ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y); const dp = d.anchors[1].price - d.anchors[0].price, pct = dp / d.anchors[0].price * 100; this.pill(ctx, (a.x + b.x) / 2, (a.y + b.y) / 2, `${this.fmt(Math.abs(dp))} (${pct.toFixed(2)}%)`, d.color); }
-  private cyclic(ctx: CanvasRenderingContext2D, d: Drawing, p0: P, p1: P, H: number) { const per = Math.abs(d.anchors[1].logical - d.anchors[0].logical) || 1; ctx.strokeStyle = d.color; ctx.globalAlpha = 0.8; ctx.setLineDash([4, 4]); for (let k = 0; k < 30; k++) { const x = this.x(d.anchors[0].logical + k * per); if (x == null || x > this.plotW()) break; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); } ctx.setLineDash([]); ctx.globalAlpha = 1; }
+  private cyclic(ctx: CanvasRenderingContext2D, d: Drawing, H: number) { if (!d.anchors[1]) return; const per = Math.abs(d.anchors[1].logical - d.anchors[0].logical) || 1; ctx.strokeStyle = d.color; ctx.globalAlpha = 0.8; ctx.setLineDash([4, 4]); for (let k = 0; k < 30; k++) { const x = this.x(d.anchors[0].logical + k * per); if (x == null || x > this.plotW()) break; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); } ctx.setLineDash([]); ctx.globalAlpha = 1; }
   private sine(ctx: CanvasRenderingContext2D, d: Drawing, a: P, b: P) { const amp = (a.y - b.y) / 2 || 10, midY = (a.y + b.y) / 2; ctx.beginPath(); for (let x = Math.min(a.x, b.x); x <= Math.max(a.x, b.x); x += 2) { const t = (x - a.x) / ((b.x - a.x) || 1); ctx.lineTo(x, midY - amp * Math.sin(t * Math.PI * 2)); } ctx.stroke(); }
   private labeledPath(ctx: CanvasRenderingContext2D, d: Drawing, P: (P | null)[], labels: string[], fill: boolean) { ctx.beginPath(); P.forEach((q, i) => q && (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); if (fill && P.length > 2) { ctx.closePath(); ctx.globalAlpha = 0.07; ctx.fill(); ctx.globalAlpha = 1; } ctx.stroke(); P.forEach((q, i) => { if (!q || !labels[i]) return; ctx.fillStyle = d.color; this.lbl(ctx, q.x + 6, q.y - 6, labels[i], d.color); }); }
   private callout(ctx: CanvasRenderingContext2D, d: Drawing, p: P) { ctx.font = '12px -apple-system, Segoe UI, sans-serif'; const txt = d.text || 'Note', w = ctx.measureText(txt).width + 16, bx = p.x + 14, by = p.y - 34; ctx.strokeStyle = d.color; ctx.lineWidth = 1; line2(ctx, p, { x: bx, y: by + 11 }); ctx.fillStyle = '#fff'; ctx.strokeStyle = d.color; this.rrect(ctx, bx, by, w, 22, 6); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#131722'; ctx.fillText(txt, bx + 8, by + 15); ctx.fillStyle = d.color; ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, 7); ctx.fill(); }
@@ -271,7 +283,7 @@ export class DrawingEngine {
 
   // ---------- persistence ----------
   private save() { try { localStorage.setItem(this.storeKey, JSON.stringify(this.drawings)); } catch { /* ignore */ } this.onChange?.(); }
-  private load() { try { const s = localStorage.getItem(this.storeKey); if (s) this.drawings = JSON.parse(s); } catch { /* ignore */ } }
+  private load() { try { const s = localStorage.getItem(this.storeKey); if (s) { const a = JSON.parse(s); if (Array.isArray(a)) this.drawings = a.filter((d) => d && typeof d.type === 'string' && Array.isArray(d.anchors)); } } catch { /* ignore */ } }
 }
 
 function line2(ctx: CanvasRenderingContext2D, a: { x: number; y: number }, b: { x: number; y: number }) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }

@@ -67,6 +67,31 @@ Legend: ✅ exists (extend) · 🔨 build · ⏸ later
   Donchian, Keltner) — see `indicator-examples`.
 - Bar replay (P2) · drawing templates/favourites toolbar (P1) · multi-chart layouts (⏸).
 
+## Parity status — BUILT (M-A + M-B)
+
+~40 drawing tools implemented, all click-to-place + selectable / movable / styled / persisted:
+
+- **Lines:** trend, ray, info (Δ / % / bars / angle), extended, trend angle, arrow, horizontal line, horizontal ray, vertical line, cross line.
+- **Channels:** parallel (angled), regression (least-squares ±2σ), disjoint, pitchfork.
+- **Fibonacci:** retracement, trend-based extension, time zone, channel.
+- **Gann:** fan, box.
+- **Patterns:** XABCD, ABCD, head & shoulders, triangle, three drives.
+- **Elliott:** impulse (1-5), correction (A-B-C), triangle (A-B-C-D-E).
+- **Forecast:** long position, short position (R:R zones), price range, measure.
+- **Shapes:** rectangle, circle, ellipse, triangle, arc, polyline.
+- **Brushes / marks:** brush, highlighter, arrow mark up / down.
+- **Text:** text, callout, note, price label.
+- **Cycles:** cyclic lines, sine line.
+- **Global UX:** magnet (snap OHLC), Ctrl axis-snap, per-symbol persistence, style popover (colour / width / delete), grouped flyout toolbar.
+
+### Deliberately skipped (low ROI / niche) — revisit on request
+
+- Fib spiral / circles / wedge / speed-resistance fan & arcs (ornamental, rarely actionable).
+- Gann square / square-fixed (heavy, niche).
+- Pitchfork variants (Schiff / modified-Schiff / inside) — base pitchfork covers the need; variants are slope tweaks.
+- Flat-top/bottom channel (parallel + regression + disjoint cover the use-cases).
+- Emoji / stickers / icons, image, table, signpost, flag, ghost-feed, bars-pattern, forecast (decorative / non-analytical).
+
 ## Phasing
 
 1. **Foundation (done):** fork + build + standalone playground + headless browser-control harness (synthetic
