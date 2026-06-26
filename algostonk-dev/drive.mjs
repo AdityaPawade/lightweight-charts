@@ -10,6 +10,7 @@
 // Action ops (coords are FRACTIONS of the first <canvas> box): move x y [steps] · down · up · click x y ·
 //   dblclick x y · key NAME · wheel dy · wait ms · eval "<js>".  --touch routes down/move/up through the touchscreen.
 import puppeteer from 'puppeteer';
+import { readFileSync } from 'node:fs';
 
 function arg(name, def) { const i = process.argv.indexOf(`--${name}`); return i >= 0 ? process.argv[i + 1] : def; }
 function flag(name) { return process.argv.includes(`--${name}`); }
@@ -34,6 +35,8 @@ const SCENARIOS = {
 let actions = SCENARIOS[scenario] || SCENARIOS.none;
 const actionsArg = arg('actions');
 if (actionsArg) { try { actions = JSON.parse(actionsArg); } catch (e) { console.error('bad --actions json', e.message); process.exit(2); } }
+const actionsFile = arg('actions-file');
+if (actionsFile) { try { actions = JSON.parse(readFileSync(actionsFile, 'utf8')); } catch (e) { console.error('bad --actions-file', e.message); process.exit(2); } }
 
 async function launch() {
   try { return await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] }); }
