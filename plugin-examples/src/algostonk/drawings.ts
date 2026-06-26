@@ -10,7 +10,7 @@ export type ToolType =
   | 'trend' | 'ray' | 'extended' | 'info' | 'trendangle' | 'hline' | 'vline' | 'hray' | 'crossline' | 'arrow'
   | 'channel' | 'regression' | 'disjoint' | 'pitchfork'
   | 'rect' | 'circle' | 'ellipse' | 'triangle' | 'arc' | 'polyline'
-  | 'fib' | 'measure' | 'longpos' | 'shortpos' | 'pricerange'
+  | 'fib' | 'fibext' | 'fibtime' | 'fibchannel' | 'gannfan' | 'gannbox' | 'measure' | 'longpos' | 'shortpos' | 'pricerange'
   | 'brush' | 'highlighter' | 'text' | 'callout' | 'note' | 'pricelabel' | 'arrowup' | 'arrowdown'
   | 'xabcd' | 'abcd' | 'hs' | 'tripattern' | 'threedrives'
   | 'ell5' | 'ellabc' | 'ellabcde'
@@ -27,7 +27,7 @@ const POINTS: Record<string, number> = {
   trend: 2, ray: 2, extended: 2, info: 2, trendangle: 2, arrow: 2, hline: 1, vline: 1, hray: 1, crossline: 1,
   channel: 3, regression: 2, disjoint: 4, pitchfork: 3,
   rect: 2, circle: 2, ellipse: 2, triangle: 3, arc: 3, polyline: 99,
-  fib: 2, measure: 2, longpos: 2, shortpos: 2, pricerange: 2,
+  fib: 2, fibext: 3, fibtime: 2, fibchannel: 3, gannfan: 2, gannbox: 2, measure: 2, longpos: 2, shortpos: 2, pricerange: 2,
   text: 1, callout: 1, note: 1, pricelabel: 1, arrowup: 1, arrowdown: 1,
   xabcd: 5, abcd: 4, hs: 6, tripattern: 4, threedrives: 7, ell5: 6, ellabc: 4, ellabcde: 6,
   cyclic: 2, sine: 2,
@@ -191,6 +191,11 @@ export class DrawingEngine {
     else if (t === 'regression' && P[0] && P[1]) this.regression(ctx, d, P[0], P[1]);
     else if (t === 'pitchfork') { if (P[0] && P[1] && P[2]) this.pitchfork(ctx, d, P[0], P[1], P[2]); else if (P[0] && P[1]) line(P[0], P[1]); }
     else if (t === 'fib' && P[0] && P[1]) this.fib(ctx, d, P[0], P[1]);
+    else if (t === 'fibext' && P[0] && P[1] && P[2]) this.fibExt(ctx, d, P);
+    else if (t === 'fibtime' && P[0] && P[1]) this.fibTime(ctx, d, H);
+    else if (t === 'fibchannel' && P[0] && P[1] && P[2]) this.fibChannel(ctx, d, P[0], P[1], P[2]);
+    else if (t === 'gannfan' && P[0] && P[1]) this.gannFan(ctx, d, P[0], P[1]);
+    else if (t === 'gannbox' && P[0] && P[1]) this.gannBox(ctx, d, P[0], P[1]);
     else if (t === 'measure' && P[0] && P[1]) this.measure(ctx, d, P[0], P[1]);
     else if ((t === 'longpos' || t === 'shortpos') && P[0] && P[1]) this.position(ctx, d, P[0], P[1], t === 'longpos');
     else if (t === 'pricerange' && P[0] && P[1]) this.priceRange(ctx, d, P[0], P[1]);
@@ -217,6 +222,38 @@ export class DrawingEngine {
   }
   private pitchfork(ctx: CanvasRenderingContext2D, d: Drawing, p0: P, p1: P, p2: P) { const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 }, dx = mid.x - p0.x, dy = mid.y - p0.y, k = 1e4 / (Math.hypot(dx, dy) || 1); const med2 = { x: mid.x + dx * k, y: mid.y + dy * k }; ctx.fillStyle = d.color; ctx.globalAlpha = 0.06; ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p1.x + dx * k, p1.y + dy * k); ctx.lineTo(p2.x + dx * k, p2.y + dy * k); ctx.lineTo(p2.x, p2.y); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1; ctx.strokeStyle = d.color; line2(ctx, p1, p2); line2(ctx, p0, med2); line2(ctx, p1, { x: p1.x + dx * k, y: p1.y + dy * k }); line2(ctx, p2, { x: p2.x + dx * k, y: p2.y + dy * k }); }
   private fib(ctx: CanvasRenderingContext2D, d: Drawing, a: P, b: P) { const p0 = d.anchors[0].price, p1 = d.anchors[1].price, L = Math.min(a.x, b.x), R = Math.max(a.x, b.x); let prev: number | null = null; FIB.forEach((lv, i) => { const price = p0 + (p1 - p0) * lv, y = this.y(price); if (y == null) return; ctx.strokeStyle = FIB_COL[i]; ctx.fillStyle = FIB_COL[i]; ctx.lineWidth = 1; if (prev != null) { ctx.globalAlpha = 0.06; ctx.fillRect(L, Math.min(prev, y), R - L, Math.abs(y - prev)); ctx.globalAlpha = 1; } ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(R, y); ctx.stroke(); ctx.fillText(`${lv.toFixed(3)}  ${this.fmt(price)}`, L + 4, y - 3); prev = y; }); ctx.strokeStyle = d.color; ctx.lineWidth = d.width; line2(ctx, a, b); }
+  private fibExt(ctx: CanvasRenderingContext2D, d: Drawing, pts: (P | null)[]) {
+    const a0 = d.anchors[0].price, a1 = d.anchors[1].price, base = d.anchors[2].price;
+    const xs = pts.filter((p): p is P => !!p).map(p => p.x); const L = Math.min(...xs), R = Math.max(...xs);
+    ctx.strokeStyle = d.color; ctx.lineWidth = d.width; ctx.globalAlpha = 0.5; ctx.beginPath(); pts.forEach((q, i) => q && (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.stroke(); ctx.globalAlpha = 1;
+    const lv = [0, 0.382, 0.5, 0.618, 1, 1.618, 2.618]; let prev: number | null = null;
+    lv.forEach((l, i) => { const price = base + (a1 - a0) * l; const y = this.y(price); if (y == null) return; const c = FIB_COL[i % FIB_COL.length]; ctx.strokeStyle = c; ctx.fillStyle = c; ctx.lineWidth = 1;
+      if (prev != null) { ctx.globalAlpha = 0.05; ctx.fillRect(L, Math.min(prev, y), R - L, Math.abs(y - prev)); ctx.globalAlpha = 1; }
+      ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(R, y); ctx.stroke(); ctx.fillText(`${l.toFixed(3)}  ${this.fmt(price)}`, L + 4, y - 3); prev = y; });
+  }
+  private fibTime(ctx: CanvasRenderingContext2D, d: Drawing, H: number) {
+    const unit = Math.abs(d.anchors[1].logical - d.anchors[0].logical) || 1; const seq = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55];
+    ctx.strokeStyle = d.color; ctx.fillStyle = d.color; ctx.lineWidth = 1; ctx.globalAlpha = 0.85; ctx.setLineDash([4, 4]);
+    for (const n of seq) { const x = this.x(d.anchors[0].logical + n * unit); if (x == null || x > this.plotW()) break; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); ctx.fillText(String(n), x + 3, 13); }
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
+  private fibChannel(ctx: CanvasRenderingContext2D, d: Drawing, p0: P, p1: P, p2: P) {
+    const m = this.slope(p0, p1), at = (x: number) => p0.y + m * (x - p0.x), off = p2.y - at(p2.x), L = Math.min(p0.x, p1.x), R = Math.max(p0.x, p1.x), lv = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+    lv.forEach((l, i) => { const c = FIB_COL[i % FIB_COL.length]; ctx.strokeStyle = c; ctx.fillStyle = c; ctx.lineWidth = 1; const yL = at(L) + off * l, yR = at(R) + off * l; ctx.beginPath(); ctx.moveTo(L, yL); ctx.lineTo(R, yR); ctx.stroke(); ctx.fillText(l.toFixed(3), L + 3, yL - 3); });
+  }
+  private gannFan(ctx: CanvasRenderingContext2D, d: Drawing, p0: P, p1: P) {
+    const dx = (p1.x - p0.x) || 1, dy = p1.y - p0.y, base = dy / dx, ratios = [0.25, 1 / 3, 0.5, 1, 2, 3, 4], big = this.plotW(), ex = p0.x + (dx >= 0 ? big : -big);
+    ctx.strokeStyle = d.color; ctx.lineWidth = 1; ctx.globalAlpha = 0.85;
+    for (const r of ratios) { ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(ex, p0.y + (ex - p0.x) * base * r); ctx.stroke(); }
+    ctx.globalAlpha = 1; ctx.lineWidth = d.width; line2(ctx, p0, p1);
+  }
+  private gannBox(ctx: CanvasRenderingContext2D, d: Drawing, p0: P, p1: P) {
+    const fr = [0, 0.25, 0.382, 0.5, 0.618, 0.75, 1], x0 = Math.min(p0.x, p1.x), x1 = Math.max(p0.x, p1.x), y0 = Math.min(p0.y, p1.y), y1 = Math.max(p0.y, p1.y);
+    ctx.strokeStyle = d.color; ctx.lineWidth = 1; ctx.globalAlpha = 0.5;
+    for (const f of fr) { const x = x0 + (x1 - x0) * f, y = y0 + (y1 - y0) * f; line2(ctx, { x, y: y0 }, { x, y: y1 }); line2(ctx, { x: x0, y }, { x: x1, y }); }
+    ctx.globalAlpha = 0.75; line2(ctx, { x: x0, y: y0 }, { x: x1, y: y1 }); line2(ctx, { x: x0, y: y1 }, { x: x1, y: y0 });
+    ctx.globalAlpha = 1; ctx.lineWidth = d.width; ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+  }
   private measure(ctx: CanvasRenderingContext2D, d: Drawing, a: P, b: P) { const up = d.anchors[1].price >= d.anchors[0].price, col = up ? '#089981' : '#f23645'; ctx.fillStyle = col; ctx.strokeStyle = col; ctx.globalAlpha = 0.12; ctx.fillRect(a.x, a.y, b.x - a.x, b.y - a.y); ctx.globalAlpha = 1; ctx.lineWidth = 1; ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y); const dp = d.anchors[1].price - d.anchors[0].price, pct = dp / d.anchors[0].price * 100, bars = Math.round(d.anchors[1].logical - d.anchors[0].logical); this.pill(ctx, (a.x + b.x) / 2, b.y + (up ? 16 : -8), `${dp >= 0 ? '+' : ''}${this.fmt(dp)} (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)  ${Math.abs(bars)} bars`, col); }
   private position(ctx: CanvasRenderingContext2D, d: Drawing, a: P, b: P, long: boolean) { const entry = d.anchors[0].price, target = d.anchors[1].price, risk = long ? entry - (target - entry) : entry + (entry - target); const ey = this.y(entry)!, ty = this.y(target)!, ry = this.y(risk)!, L = Math.min(a.x, b.x), R = Math.max(a.x, b.x); ctx.fillStyle = '#089981'; ctx.globalAlpha = 0.14; ctx.fillRect(L, Math.min(ey, ty), R - L, Math.abs(ty - ey)); ctx.fillStyle = '#f23645'; ctx.fillRect(L, Math.min(ey, ry), R - L, Math.abs(ry - ey)); ctx.globalAlpha = 1; ctx.strokeStyle = '#9598a1'; ctx.lineWidth = 1; ctx.strokeRect(L, Math.min(ty, ry), R - L, Math.abs(ry - ty)); ctx.strokeStyle = '#131722'; ctx.setLineDash([3, 3]); line2(ctx, { x: L, y: ey }, { x: R, y: ey }); ctx.setLineDash([]); const rr = Math.abs(target - entry) / (Math.abs(entry - risk) || 1); this.pill(ctx, (L + R) / 2, Math.min(ty, ry) - 8, `${long ? 'LONG' : 'SHORT'}  R:R ${rr.toFixed(2)}`, long ? '#089981' : '#f23645'); }
   private priceRange(ctx: CanvasRenderingContext2D, d: Drawing, a: P, b: P) { ctx.fillStyle = d.color; ctx.globalAlpha = 0.10; ctx.fillRect(a.x, a.y, b.x - a.x, b.y - a.y); ctx.globalAlpha = 1; ctx.lineWidth = 1; ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y); const dp = d.anchors[1].price - d.anchors[0].price, pct = dp / d.anchors[0].price * 100; this.pill(ctx, (a.x + b.x) / 2, (a.y + b.y) / 2, `${this.fmt(Math.abs(dp))} (${pct.toFixed(2)}%)`, d.color); }

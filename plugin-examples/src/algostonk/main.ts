@@ -117,13 +117,13 @@ const GROUPS: Group[] = [
   ] },
   { name: 'Fibonacci', items: [
     { label: 'Fib retracement', tool: 'fib', icon: ICON.fib, sc: 'Alt+F', star: true },
-    { label: 'Trend-based fib extension', icon: ICON.fibext, soon: true },
-    { label: 'Fib time zone', icon: ICON.fibtime, soon: true },
-    { label: 'Fib channel', icon: ICON.fibchan, soon: true },
+    { label: 'Trend-based fib extension', tool: 'fibext', icon: ICON.fibext },
+    { label: 'Fib time zone', tool: 'fibtime', icon: ICON.fibtime },
+    { label: 'Fib channel', tool: 'fibchannel', icon: ICON.fibchan },
   ] },
   { name: 'Gann', items: [
-    { label: 'Gann fan', icon: ICON.gannfan, soon: true },
-    { label: 'Gann box', icon: ICON.gannbox, soon: true },
+    { label: 'Gann fan', tool: 'gannfan', icon: ICON.gannfan, star: true },
+    { label: 'Gann box', tool: 'gannbox', icon: ICON.gannbox },
   ] },
   { name: 'Patterns', items: [
     { label: 'XABCD pattern', tool: 'xabcd', icon: ICON.pattern, star: true },
