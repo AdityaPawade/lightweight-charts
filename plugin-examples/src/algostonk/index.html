@@ -56,6 +56,21 @@
       #style .del { color: #ef5350; cursor: pointer; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 5px; }
       #style .del:hover { background: #fdecec; }
       #style .vr { width: 1px; height: 18px; background: var(--border); }
+
+      /* grouped tool flyout (TradingView-style) */
+      #toolbar .tool .caret { position: absolute; right: 2px; bottom: 3px; width: 0; height: 0; border-left: 3.5px solid transparent; border-right: 3.5px solid transparent; border-top: 4px solid #9aa1b0; opacity: .7; }
+      #flyout { position: fixed; z-index: 60; min-width: 236px; background: #fff; border: 1px solid var(--border); border-radius: 11px; box-shadow: var(--shadow); padding: 6px; display: none; }
+      #flyout.show { display: block; }
+      #flyout .grp { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); padding: 7px 8px 3px; }
+      #flyout .item { display: flex; align-items: center; gap: 11px; padding: 7px 8px; border-radius: 7px; cursor: pointer; font-size: 13px; color: var(--ink); }
+      #flyout .item:hover { background: var(--hover); }
+      #flyout .item.active { color: var(--accent); background: var(--accent-soft); }
+      #flyout .item.soon { color: #b8bdc9; cursor: default; }
+      #flyout .item.soon:hover { background: transparent; }
+      #flyout .item svg { width: 18px; height: 18px; flex: 0 0 18px; }
+      #flyout .item .nm { flex: 1; }
+      #flyout .item .sc { font-size: 11px; color: var(--muted); }
+      #flyout .item .star { color: #f7b500; font-size: 12px; }
     </style>
   </head>
   <body>

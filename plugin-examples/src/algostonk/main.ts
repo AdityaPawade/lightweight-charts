@@ -41,33 +41,99 @@ chart.timeScale().fitContent();
 
 const engine = new DrawingEngine({ canvas: overlay, chart, series: candle, stage, bars, storeKey: 'algostonk:draw:DEMO' });
 
-// ---------- toolbar ----------
+// ---------- toolbar (TradingView-style grouped flyouts) ----------
 const I = (p: string) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
-const TOOLS: { tool: ToolType | 'sep'; name?: string; icon?: string }[] = [
-  { tool: 'cursor', name: 'Cursor', icon: I('<path d="M5 3l6 16 2.2-6.5L19 10 5 3z"/>') },
-  { tool: 'sep' },
-  { tool: 'trend', name: 'Trend line', icon: I('<path d="M4 19L20 5"/><circle cx="4" cy="19" r="1.6"/><circle cx="20" cy="5" r="1.6"/>') },
-  { tool: 'ray', name: 'Ray', icon: I('<path d="M4 18L21 6"/><circle cx="4" cy="18" r="1.6"/>') },
-  { tool: 'extended', name: 'Extended line', icon: I('<path d="M2 20L22 4"/>') },
-  { tool: 'hline', name: 'Horizontal line', icon: I('<path d="M3 12h18"/><circle cx="9" cy="12" r="1.6"/>') },
-  { tool: 'vline', name: 'Vertical line', icon: I('<path d="M12 3v18"/><circle cx="12" cy="9" r="1.6"/>') },
-  { tool: 'sep' },
-  { tool: 'rect', name: 'Rectangle', icon: I('<rect x="4" y="6" width="16" height="12" rx="1"/>') },
-  { tool: 'fib', name: 'Fib retracement', icon: I('<path d="M3 6h18M3 10h18M3 14h18M3 18h18"/>') },
-  { tool: 'measure', name: 'Measure', icon: I('<path d="M3 8h18v8H3z"/><path d="M7 8v3M11 8v4M15 8v3M19 8v4"/>') },
-  { tool: 'sep' },
-  { tool: 'brush', name: 'Brush', icon: I('<path d="M4 20c3 0 3-3 6-3 2 0 2 2 4 2 3 0 4-6 6-12"/>') },
-  { tool: 'text', name: 'Text', icon: I('<path d="M5 5h14M12 5v14"/>') },
+const ICON: Record<string, string> = {
+  cursor: I('<path d="M5 3l6 16 2.2-6.5L19 10 5 3z"/>'),
+  trend: I('<path d="M4 19L20 5"/><circle cx="4" cy="19" r="1.5"/><circle cx="20" cy="5" r="1.5"/>'),
+  ray: I('<path d="M4 18L21 6"/><circle cx="4" cy="18" r="1.5"/>'),
+  extended: I('<path d="M2 20L22 4"/>'),
+  hline: I('<path d="M3 12h18"/><circle cx="9" cy="12" r="1.5"/>'),
+  vline: I('<path d="M12 3v18"/><circle cx="12" cy="9" r="1.5"/>'),
+  channel: I('<path d="M4 17L15 5M9 21L20 9"/><circle cx="4" cy="17" r="1.5"/><circle cx="15" cy="5" r="1.5"/>'),
+  regression: I('<path d="M4 16L20 8"/><path d="M4 19L20 11" stroke-dasharray="2 2"/><path d="M4 13L20 5" stroke-dasharray="2 2"/>'),
+  disjoint: I('<path d="M4 18L11 10M13 16L20 8"/>'),
+  fib: I('<path d="M3 6h18M3 10h18M3 14h18M3 18h18"/>'),
+  fibext: I('<path d="M4 20L12 8l8 4"/><path d="M3 6h18" stroke-dasharray="2 2"/>'),
+  fibchan: I('<path d="M4 18L18 6M7 21L21 9"/>'),
+  rect: I('<rect x="4" y="6" width="16" height="12" rx="1"/>'),
+  circle: I('<circle cx="12" cy="12" r="7.5"/>'),
+  triangle: I('<path d="M12 5L20 19H4z"/>'),
+  measure: I('<path d="M3 8h18v8H3z"/><path d="M7 8v3M11 8v4M15 8v3M19 8v4"/>'),
+  brush: I('<path d="M4 20c3 0 3-3 6-3 2 0 2 2 4 2 3 0 4-6 6-12"/>'),
+  highlighter: I('<path d="M5 19l3 1 11-11-4-4L4 16z"/>'),
+  arrow: I('<path d="M5 19L19 5M19 5h-7M19 5v7"/>'),
+  text: I('<path d="M5 5h14M12 5v14"/>'),
+  callout: I('<path d="M4 5h16v10H10l-4 4v-4H4z"/>'),
+};
+type Item = { label: string; tool?: ToolType; icon: string; sc?: string; star?: boolean; soon?: boolean };
+type Group = { name: string; items: Item[]; sepAfter?: boolean };
+const GROUPS: Group[] = [
+  { name: 'Cursor', items: [{ label: 'Cursor', tool: 'cursor', icon: ICON.cursor }], sepAfter: true },
+  { name: 'Lines', items: [
+    { label: 'Trend line', tool: 'trend', icon: ICON.trend, sc: 'Alt+T', star: true },
+    { label: 'Ray', tool: 'ray', icon: ICON.ray },
+    { label: 'Extended line', tool: 'extended', icon: ICON.extended },
+    { label: 'Horizontal line', tool: 'hline', icon: ICON.hline, sc: 'Alt+H' },
+    { label: 'Vertical line', tool: 'vline', icon: ICON.vline, sc: 'Alt+V' },
+  ] },
+  { name: 'Channels', items: [
+    { label: 'Parallel channel', tool: 'channel', icon: ICON.channel, star: true },
+    { label: 'Regression trend', icon: ICON.regression, soon: true },
+    { label: 'Disjoint channel', icon: ICON.disjoint, soon: true },
+  ] },
+  { name: 'Fibonacci', items: [
+    { label: 'Fib retracement', tool: 'fib', icon: ICON.fib, sc: 'Alt+F', star: true },
+    { label: 'Trend-based fib extension', icon: ICON.fibext, soon: true },
+    { label: 'Fib channel', icon: ICON.fibchan, soon: true },
+  ] },
+  { name: 'Shapes', items: [
+    { label: 'Rectangle', tool: 'rect', icon: ICON.rect, sc: 'Alt+R', star: true },
+    { label: 'Circle', icon: ICON.circle, soon: true },
+    { label: 'Triangle', icon: ICON.triangle, soon: true },
+  ] },
+  { name: 'Measure', items: [{ label: 'Measure', tool: 'measure', icon: ICON.measure }], sepAfter: true },
+  { name: 'Brushes', items: [
+    { label: 'Brush', tool: 'brush', icon: ICON.brush },
+    { label: 'Highlighter', icon: ICON.highlighter, soon: true },
+    { label: 'Arrow', icon: ICON.arrow, soon: true },
+  ] },
+  { name: 'Text', items: [
+    { label: 'Text', tool: 'text', icon: ICON.text },
+    { label: 'Callout', icon: ICON.callout, soon: true },
+  ] },
 ];
+
 const toolbar = document.getElementById('toolbar') as HTMLElement;
-for (const t of TOOLS) {
-  if (t.tool === 'sep') { const s = document.createElement('div'); s.className = 'sep'; toolbar.appendChild(s); continue; }
-  const el = document.createElement('div'); el.className = 'tool' + (t.tool === 'cursor' ? ' active' : ''); el.dataset.tool = t.tool;
-  el.dataset.tooltip = t.name!; el.innerHTML = t.icon!;
-  el.addEventListener('click', () => { engine.setTool(t.tool as ToolType); });
-  toolbar.appendChild(el);
+const flyout = document.createElement('div'); flyout.id = 'flyout'; document.body.appendChild(flyout);
+const current: number[] = GROUPS.map(g => Math.max(0, g.items.findIndex(it => !it.soon)));
+
+function groupIcon(gi: number) { const it = GROUPS[gi].items[current[gi]]; return it.icon + (GROUPS[gi].items.length > 1 ? '<span class="caret"></span>' : ''); }
+GROUPS.forEach((g, gi) => {
+  const btn = document.createElement('div'); btn.className = 'tool' + (gi === 0 ? ' active' : ''); btn.dataset.g = String(gi);
+  btn.dataset.tooltip = g.name; btn.innerHTML = groupIcon(gi);
+  btn.addEventListener('click', (e) => { e.stopPropagation(); const it = g.items[current[gi]]; if (it.tool) engine.setTool(it.tool); if (g.items.length > 1) openFlyout(gi, btn); else closeFlyout(); });
+  toolbar.appendChild(btn);
+  if (g.sepAfter) { const s = document.createElement('div'); s.className = 'sep'; toolbar.appendChild(s); }
+});
+
+function openFlyout(gi: number, btn: HTMLElement) {
+  const g = GROUPS[gi]; const r = btn.getBoundingClientRect();
+  flyout.innerHTML = `<div class="grp">${g.name}</div>` + g.items.map((it, ii) =>
+    `<div class="item ${it.soon ? 'soon' : ''} ${(!it.soon && current[gi] === ii && engine.tool === it.tool) ? 'active' : ''}" data-g="${gi}" data-i="${ii}">${it.icon}<span class="nm">${it.label}</span>${it.sc ? `<span class="sc">${it.sc}</span>` : ''}${it.star ? '<span class="star">★</span>' : ''}${it.soon ? '<span class="sc">soon</span>' : ''}</div>`).join('');
+  flyout.style.left = (r.right + 6) + 'px'; flyout.style.top = Math.max(8, Math.min(r.top, window.innerHeight - g.items.length * 36 - 40)) + 'px';
+  flyout.classList.add('show');
 }
-function syncToolbar() { toolbar.querySelectorAll<HTMLElement>('.tool').forEach(el => el.classList.toggle('active', el.dataset.tool === engine.tool)); }
+function closeFlyout() { flyout.classList.remove('show'); }
+flyout.addEventListener('click', (e) => {
+  const item = (e.target as HTMLElement).closest('.item') as HTMLElement | null; if (!item || item.classList.contains('soon')) return;
+  const gi = +item.dataset.g!, ii = +item.dataset.i!; current[gi] = ii;
+  const btn = toolbar.querySelector(`.tool[data-g="${gi}"]`) as HTMLElement; if (btn) btn.innerHTML = groupIcon(gi);
+  const it = GROUPS[gi].items[ii]; if (it.tool) engine.setTool(it.tool); closeFlyout();
+});
+document.addEventListener('click', (e) => { if (!flyout.contains(e.target as Node) && !(e.target as HTMLElement).closest('#toolbar')) closeFlyout(); });
+
+function syncToolbar() { toolbar.querySelectorAll<HTMLElement>('.tool').forEach(btn => { const gi = +btn.dataset.g!; const it = GROUPS[gi].items[current[gi]]; btn.classList.toggle('active', !!it.tool && it.tool === engine.tool); }); }
 
 // ---------- magnet / clear ----------
 const btnMagnet = document.getElementById('btnMagnet') as HTMLElement;
@@ -118,3 +184,4 @@ setLegend(bars[bars.length - 1], bars[bars.length - 2]);
 
 // expose for the puppeteer test harness
 (window as any).__algo = { chart, candle, engine, bars };
+(window as any).__algo.openFlyout = (name: string) => { const gi = GROUPS.findIndex(g => g.name === name); const btn = toolbar.querySelector(`.tool[data-g="${gi}"]`) as HTMLElement | null; if (btn) openFlyout(gi, btn); };

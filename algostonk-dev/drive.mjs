@@ -66,6 +66,7 @@ try {
     else if (op === 'down') { useTouch ? await ts.touchStart(X(actions.cur?.[0] ?? 0.5), Y(actions.cur?.[1] ?? 0.5)) : await page.mouse.down(); }
     else if (op === 'up') { useTouch ? await ts.touchEnd() : await page.mouse.up(); }
     else if (op === 'click') { await page.mouse.click(X(p1), Y(p2)); }
+    else if (op === 'clickabs') { await page.mouse.click(p1, p2); }
     else if (op === 'dblclick') { await page.mouse.click(X(p1), Y(p2), { clickCount: 2 }); }
     else if (op === 'key') { await page.keyboard.press(p1); }
     else if (op === 'wheel') { await page.mouse.move(X(0.5), Y(0.5)); await page.mouse.wheel({ deltaY: p1 }); }
