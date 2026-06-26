@@ -100,4 +100,11 @@ Legend: ✅ exists (extend) · 🔨 build · ⏸ later
    magnet) + toolbar/cursor shell; ship trend-line family + horizontal/ray + rectangle + fib-retracement + measure.
 3. **P1:** channels, more shapes, annotations, position tool, more indicators, Heikin-Ashi, templates.
 4. **P2:** pitchforks/gann/patterns/elliott, replay, exotic chart types.
-5. **Integrate:** publish the drawing-tool package; Algostonk frontend consumes it (replace the plain LWC dep).
+5. **Integrate (DONE 2026-06-26):** the drawing engine is LIVE on the Algostonk instrument chart at
+   trading.algostonk.com. `drawings.ts` was copied into the platform frontend (`frontend/src/lib/drawings.ts`) and given
+   a React shell (`components/DrawingToolbar.tsx`: left rail + grouped flyouts + magnet/keep/clear + a style popover
+   portaled to `<body>`), wired into `InstrumentTradingChart.tsx` (overlay canvas in a relative stage, per-symbol
+   localStorage, `engine.destroy()` on unmount). Integrated by copying the engine (not an npm package); this fork stays
+   the dev playground and remains the canonical engine source. The plain `lightweight-charts` dep still renders the chart
+   — only the drawing overlay is ours. Platform commit 83d2ecd (+ d6d205d healthcheck fix); deployed via the Pi
+   Docker-context flow (RUNBOOK §C).
